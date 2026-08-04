@@ -1,9 +1,11 @@
 # efix
 
-Bu depo, topladığım ve faydalı bulduğum açık kaynak AI / ML / veri projelerinin kısa bir listesini ve notlarını içerir. İlk commit olarak bir özet ve genel repo listesi eklendi.
+Bu depo, efixteknoloji için toplanmış ve düzenlenmiş açık kaynak AI / ML / veri projelerinin listesini ve entegrasyon notlarını içerir.
 
-Kullanım:
-- GENERAL_REPOS.md dosyasındaki bağlantılara bakabilirsiniz.
-- İsterseniz listeden seçtiklerinizi projeye dahil edebilirim (ör. alt dizinlere klonlama, örnekler ekleme, kılavuzlar).
+Nasıl kullanılır:
+- GENERAL_REPOS.md içindeki listeden ilginizi çeken projeleri seçin.
+- scripts/clone_repos.sh ile seçilen projoları projects/ dizinine klonlayabilirsiniz.
 
-Oluşturan: efixteknoloji / GitHub Copilot (otomatik işlem)
+Katkıda bulunmak için CONTRIBUTING.md'yi okuyun.
+
+License: MIT (LICENSE dosyasına bakın)
