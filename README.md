@@ -1,9 +1,9 @@
 # efix
 
-Bu depo efixteknoloji tarafından yönetilmektedir. Bu ilk commit, otomatik olarak oluşturulmuştur.
+Bu depo, topladığım ve faydalı bulduğum açık kaynak AI / ML / veri projelerinin kısa bir listesini ve notlarını içerir. İlk commit olarak bir özet ve genel repo listesi eklendi.
 
-Amaç: Popüler AI / ML repolarının kısa bir dizinini `ai-repos/` altında toplayıp bir PR ile eklemek.
+Kullanım:
+- GENERAL_REPOS.md dosyasındaki bağlantılara bakabilirsiniz.
+- İsterseniz listeden seçtiklerinizi projeye dahil edebilirim (ör. alt dizinlere klonlama, örnekler ekleme, kılavuzlar).
 
-İleride yapılacaklar:
-- `add-ai-repos-index` branch'i oluşturup top 50 AI/ML reposunu listeleyen `ai-repos/index.md` dosyasını ekleyeceğim.
-- Lisansı MIT/Apache/BSD olan repoların README ve LICENSE dosyalarını ai-repos/<owner>__<repo>/ dizinine kopyalayabilirim (isteğe bağlı, onayınız var).
+Oluşturan: efixteknoloji / GitHub Copilot (otomatik işlem)
