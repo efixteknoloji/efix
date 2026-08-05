@@ -1,0 +1,181 @@
+name: Automate add workflows & PR
+
+on:
+  workflow_dispatch:
+
+jobs:
+  fork-and-pr:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Create fork (uses PAT)
+        uses: actions/github-script@v6
+        with:
+          github-token: ${{ secrets.PAT }}
+          script: |
+            const owner = 'efixteknoloji';
+            const repo = 'efix';
+            try {
+              await github.rest.repos.createFork({ owner, repo });
+              core.info('Fork requested/created.');
+            } catch (err) {
+              core.info('Create fork error (may already exist): ' + err.message);
+            }
+
+      - name: Wait for fork to exist
+        run: |
+          FORK="${{ github.actor }}/efix"
+          for i in {1..30}; do
+            status=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: token ${{ secrets.PAT }}" https://api.github.com/repos/${FORK} || true)
+            if [ "$status" = "200" ]; then
+              echo "Fork available"
+              exit 0
+            fi
+            echo "Waiting for fork to be ready... ($i)"
+            sleep 2
+          done
+          echo "Fork not ready after wait" >&2
+          exit 1
+
+      - name: Checkout upstream repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Configure git for pushing to fork
+        run: |
+          git config user.name "${{ github.actor }}"
+          git config user.email "${{ github.actor }}@users.noreply.github.com"
+          git remote add fork https://${{ secrets.PAT }}@github.com/${{ github.actor }}/efix.git
+
+      - name: Create branch and add files
+        run: |
+          git checkout -b add-workflows
+
+          mkdir -p .github/workflows
+
+          cat > .github/workflows/clone-repos.yml <<'EOF'
+name: Clone or Add Repositories
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'clone or submodule (clone = copy files into projects/, submodule = add git submodules)'
+        required: true
+        default: 'clone'
+
+jobs:
+  clone:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+
+      - name: Set up Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Run script (clone or submodule)
+        run: |
+          chmod +x scripts/clone_repos.sh
+          chmod +x scripts/add_submodules.sh
+          if [ "${{ github.event.inputs.mode }}" = "submodule" ]; then
+            ./scripts/add_submodules.sh
+          else
+            ./scripts/clone_repos.sh
+          fi
+
+      - name: Commit and push changes
+        run: |
+          git add projects || true
+          git add .gitmodules || true
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "chore: add cloned repos (mode=${{ github.event.inputs.mode }})"
+            git push origin HEAD:main
+          fi
+EOF
+
+          cat > .github/workflows/basic-ci.yml <<'EOF'
+# Basic CI — lint check placeholder
+
+name: Basic CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check repository files
+        run: |
+          echo "Repository has $(ls -1 | wc -l) top-level items"
+EOF
+
+          cat > README.md <<'EOF'
+# efix
+
+Bu depo, efixteknoloji için toplanmış ve düzenlenmiş açık kaynak AI / ML / veri projelerinin listesini ve entegrasyon notlarını içerir.
+
+Nasıl kullanılır:
+
+- GENERAL_REPOS.md içindeki listeden ilginizi çeken projeleri seçin.
+- scripts/clone_repos.sh ile seçilen projoları projects/ dizinine klonlayabilirsiniz veya Actions workflow'u kullanarak submodule olarak ekleyebilirsiniz.
+
+Badges:
+
+[![Repo size](https://img.shields.io/badge/repo-empty-lightgrey)](https://github.com/efixteknoloji/efix)
+
+Hızlı Başlangıç
+
+- Manuel klonlama (yerelde):
+  - scripts/clone_repos.sh scriptini çalıştırarak seçili repoları projects/ klasörüne indirebilirsiniz.
+
+- GitHub Actions ile otomatik klonlama / submodule ekleme:
+  - GitHub > Actions > "Clone or Add Repositories" workflow'unu manuel (Run workflow) çalıştırın.
+  - Mode seçeneği: "clone" (dosya kopyalama) veya "submodule" (git submodule olarak ekleme).
+
+CI ve Diğer
+
+- CONTRIBUTING.md içindeki talimatlara göre katkıda bulunabilirsiniz.
+- Daha gelişmiş CI eklememi isterseniz (lint/test/workflows) söyleyin.
+
+License: MIT
+EOF
+
+          git add .github/workflows README.md
+          git commit -m "chore: add workflows and update README"
+
+      - name: Push branch to fork
+        run: |
+          git push fork add-workflows --force
+
+      - name: Create PR from fork to upstream
+        uses: actions/github-script@v6
+        with:
+          github-token: ${{ secrets.PAT }}
+          script: |
+            const owner = 'efixteknoloji';
+            const repo = 'efix';
+            const head = `${process.env.GITHUB_ACTOR}:add-workflows`;
+            const title = 'chore: add workflows and update README';
+            const body = 'Automated: add workflows and README update (created by workflow).';
+            try {
+              const pr = await github.rest.pulls.create({ owner, repo, title, head, base: 'main', body });
+              core.setOutput('pr_url', pr.data.html_url);
+              core.info('PR created: ' + pr.data.html_url);
+            } catch (err) {
+              core.setFailed('Failed to create PR: ' + err.message);
+            }
