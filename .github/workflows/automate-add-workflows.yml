@@ -53,7 +53,6 @@ jobs:
       - name: Create branch and add files
         run: |
           git checkout -b add-workflows
-
           mkdir -p .github/workflows
 
           cat > .github/workflows/clone-repos.yml <<'EOF'
@@ -61,11 +60,6 @@ name: Clone or Add Repositories
 
 on:
   workflow_dispatch:
-    inputs:
-      mode:
-        description: 'clone or submodule (clone = copy files into projects/, submodule = add git submodules)'
-        required: true
-        default: 'clone'
 
 jobs:
   clone:
@@ -73,24 +67,10 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          persist-credentials: true
-
-      - name: Set up Git
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-      - name: Run script (clone or submodule)
+      - name: Run clone script
         run: |
           chmod +x scripts/clone_repos.sh
-          chmod +x scripts/add_submodules.sh
-          if [ "${{ github.event.inputs.mode }}" = "submodule" ]; then
-            ./scripts/add_submodules.sh
-          else
-            ./scripts/clone_repos.sh
-          fi
-
+          ./scripts/clone_repos.sh
       - name: Commit and push changes
         run: |
           git add projects || true
@@ -98,14 +78,12 @@ jobs:
           if git diff --staged --quiet; then
             echo "No changes to commit"
           else
-            git commit -m "chore: add cloned repos (mode=${{ github.event.inputs.mode }})"
+            git commit -m "chore: add cloned repos"
             git push origin HEAD:main
           fi
 EOF
 
           cat > .github/workflows/basic-ci.yml <<'EOF'
-# Basic CI — lint check placeholder
-
 name: Basic CI
 
 on:
@@ -174,7 +152,6 @@ EOF
             const body = 'Automated: add workflows and README update (created by workflow).';
             try {
               const pr = await github.rest.pulls.create({ owner, repo, title, head, base: 'main', body });
-              core.setOutput('pr_url', pr.data.html_url);
               core.info('PR created: ' + pr.data.html_url);
             } catch (err) {
               core.setFailed('Failed to create PR: ' + err.message);
