@@ -9,66 +9,66 @@ jobs:
     permissions:
       contents: write
       pull-requests: write
+
     steps:
-      - name: Request/create fork
-        uses: actions/github-script@v6
-        with:
-          github-token: ${{ secrets.PAT }}
-          script: |
-            const owner = 'efixteknoloji';
-            const repo = 'efix';
-            try {
-              await github.rest.repos.createFork({ owner, repo });
-              core.info('Fork requested/created.');
-            } catch (err) {
-              core.info('Create fork error (may already exist): ' + err.message);
-            }
+      - name: Ensure PAT secret is present
+        run: |
+          if [ -z "${{ secrets.PAT }}" ]; then
+            echo "ERROR: secrets.PAT is empty. Add your Personal Access Token as a repository secret named PAT." >&2
+            exit 1
+          fi
 
-      - name: Wait for fork to be available
-        uses: actions/github-script@v6
-        with:
-          github-token: ${{ secrets.PAT }}
-          script: |
-            const forkOwner = process.env.GITHUB_ACTOR;
-            const repo = 'efix';
-            for (let i = 0; i < 30; i++) {
-              try {
-                await github.rest.repos.get({ owner: forkOwner, repo });
-                core.info('Fork is available.');
-                return;
-              } catch (e) {
-                core.info(`Waiting for fork to be ready (${i+1})`);
-                await new Promise(r => setTimeout(r, 2000));
-              }
-            }
-            core.setFailed('Timed out waiting for fork to appear.');
-
-      - name: Create branch on fork and add files
+      - name: Fork/branch/create files and PR (robust)
         uses: actions/github-script@v6
         with:
           github-token: ${{ secrets.PAT }}
           script: |
             const upstreamOwner = 'efixteknoloji';
             const upstreamRepo = 'efix';
-            const forkOwner = process.env.GITHUB_ACTOR;
-            const forkRepo = 'efix';
-            const newBranch = 'add-workflows';
+            const actor = process.env.GITHUB_ACTOR;
+            core.info(`Workflow actor: ${actor}`);
 
-            // get upstream default branch SHA
+            const operateOnUpstream = actor === upstreamOwner;
+            let targetOwner = operateOnUpstream ? upstreamOwner : actor;
+            core.info(`Target owner: ${targetOwner}`);
+
+            if (!operateOnUpstream) {
+              // request fork (may already exist)
+              try {
+                await github.rest.repos.createFork({ owner: upstreamOwner, repo: upstreamRepo });
+                core.info('Fork requested.');
+              } catch (err) {
+                core.info('Create fork call returned: ' + err.message);
+              }
+
+              // wait for fork to be available
+              for (let i = 0; i < 30; i++) {
+                try {
+                  await github.rest.repos.get({ owner: actor, repo: upstreamRepo });
+                  core.info('Fork is available on GitHub.');
+                  break;
+                } catch (e) {
+                  core.info(`Waiting for fork to be ready (${i+1}/30)...`);
+                  await new Promise(r => setTimeout(r, 2000));
+                }
+              }
+            }
+
+            // get default branch SHA from upstream
             const upstream = await github.rest.repos.get({ owner: upstreamOwner, repo: upstreamRepo });
             const defaultBranch = upstream.data.default_branch || 'main';
             const ref = await github.rest.git.getRef({ owner: upstreamOwner, repo: upstreamRepo, ref: `heads/${defaultBranch}` });
             const sha = ref.data.object.sha;
 
-            // create branch on fork (if not exists)
+            const newBranch = 'add-workflows';
+            // create branch on target (if not exists)
             try {
-              await github.rest.git.createRef({ owner: forkOwner, repo: forkRepo, ref: `refs/heads/${newBranch}`, sha });
-              core.info('Created branch on fork: ' + newBranch);
+              await github.rest.git.createRef({ owner: targetOwner, repo: upstreamRepo, ref: `refs/heads/${newBranch}`, sha });
+              core.info(`Created branch ${newBranch} on ${targetOwner}/${upstreamRepo}`);
             } catch (err) {
-              core.info('Branch creation skipped (may already exist): ' + err.message);
+              core.info(`Branch creation skipped on ${targetOwner}/${upstreamRepo}: ${err.message}`);
             }
 
-            // files to add/update on fork branch
             const files = [
               {
                 path: '.github/workflows/clone-repos.yml',
@@ -154,12 +154,11 @@ License: MIT`
 
             for (const f of files) {
               try {
-                // if file exists on the fork branch, update it
-                const existing = await github.rest.repos.getContent({ owner: forkOwner, repo: forkRepo, path: f.path, ref: newBranch });
-                core.info(`Updating ${f.path} on ${newBranch}`);
+                const existing = await github.rest.repos.getContent({ owner: targetOwner, repo: upstreamRepo, path: f.path, ref: newBranch });
+                core.info(`Updating ${f.path} on ${targetOwner}/${upstreamRepo}:${newBranch}`);
                 await github.rest.repos.createOrUpdateFileContents({
-                  owner: forkOwner,
-                  repo: forkRepo,
+                  owner: targetOwner,
+                  repo: upstreamRepo,
                   path: f.path,
                   message: f.message,
                   content: Buffer.from(f.content).toString('base64'),
@@ -167,10 +166,10 @@ License: MIT`
                   sha: existing.data.sha
                 });
               } catch (err) {
-                core.info(`Creating ${f.path} on ${newBranch}`);
+                core.info(`Creating ${f.path} on ${targetOwner}/${upstreamRepo}:${newBranch}`);
                 await github.rest.repos.createOrUpdateFileContents({
-                  owner: forkOwner,
-                  repo: forkRepo,
+                  owner: targetOwner,
+                  repo: upstreamRepo,
                   path: f.path,
                   message: f.message,
                   content: Buffer.from(f.content).toString('base64'),
@@ -179,19 +178,17 @@ License: MIT`
               }
             }
 
-      - name: Create PR from fork to upstream
-        uses: actions/github-script@v6
-        with:
-          github-token: ${{ secrets.PAT }}
-          script: |
-            const owner = 'efixteknoloji';
-            const repo = 'efix';
-            const head = `${process.env.GITHUB_ACTOR}:add-workflows`;
-            const title = 'chore: add workflows and update README';
-            const body = 'Automated: add workflows and README update (created by workflow).';
-            try {
-              const pr = await github.rest.pulls.create({ owner, repo, title, head, base: 'main', body });
-              core.info('PR created: ' + pr.data.html_url);
-            } catch (err) {
-              core.setFailed('Failed to create PR: ' + err.message);
+            // if we operated on a fork (actor != upstreamOwner) create PR
+            if (targetOwner !== upstreamOwner) {
+              const head = `${targetOwner}:${newBranch}`;
+              const title = 'chore: add workflows and update README';
+              const body = 'Automated: add workflows and README update (created by workflow).';
+              try {
+                const pr = await github.rest.pulls.create({ owner: upstreamOwner, repo: upstreamRepo, title, head, base: defaultBranch, body });
+                core.info('PR created: ' + pr.data.html_url);
+              } catch (err) {
+                core.setFailed('Failed to create PR: ' + err.message);
+              }
+            } else {
+              core.info('Changes pushed to upstream owner branch; no PR created.');
             }
