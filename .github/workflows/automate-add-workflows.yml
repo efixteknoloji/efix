@@ -10,7 +10,7 @@ jobs:
       contents: write
       pull-requests: write
     steps:
-      - name: Create fork (uses PAT)
+      - name: Request/create fork
         uses: actions/github-script@v6
         with:
           github-token: ${{ secrets.PAT }}
@@ -24,39 +24,56 @@ jobs:
               core.info('Create fork error (may already exist): ' + err.message);
             }
 
-      - name: Wait for fork to exist
-        run: |
-          FORK="${{ github.actor }}/efix"
-          for i in {1..30}; do
-            status=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: token ${{ secrets.PAT }}" https://api.github.com/repos/${FORK} || true)
-            if [ "$status" = "200" ]; then
-              echo "Fork available"
-              exit 0
-            fi
-            echo "Waiting for fork to be ready... ($i)"
-            sleep 2
-          done
-          echo "Fork not ready after wait" >&2
-          exit 1
-
-      - name: Checkout upstream repository
-        uses: actions/checkout@v4
+      - name: Wait for fork to be available
+        uses: actions/github-script@v6
         with:
-          fetch-depth: 0
+          github-token: ${{ secrets.PAT }}
+          script: |
+            const forkOwner = process.env.GITHUB_ACTOR;
+            const repo = 'efix';
+            for (let i = 0; i < 30; i++) {
+              try {
+                await github.rest.repos.get({ owner: forkOwner, repo });
+                core.info('Fork is available.');
+                return;
+              } catch (e) {
+                core.info(`Waiting for fork to be ready (${i+1})`);
+                await new Promise(r => setTimeout(r, 2000));
+              }
+            }
+            core.setFailed('Timed out waiting for fork to appear.');
 
-      - name: Configure git for pushing to fork
-        run: |
-          git config user.name "${{ github.actor }}"
-          git config user.email "${{ github.actor }}@users.noreply.github.com"
-          git remote add fork https://${{ secrets.PAT }}@github.com/${{ github.actor }}/efix.git
+      - name: Create branch on fork and add files
+        uses: actions/github-script@v6
+        with:
+          github-token: ${{ secrets.PAT }}
+          script: |
+            const upstreamOwner = 'efixteknoloji';
+            const upstreamRepo = 'efix';
+            const forkOwner = process.env.GITHUB_ACTOR;
+            const forkRepo = 'efix';
+            const newBranch = 'add-workflows';
 
-      - name: Create branch and add files
-        run: |
-          git checkout -b add-workflows
-          mkdir -p .github/workflows
+            // get upstream default branch SHA
+            const upstream = await github.rest.repos.get({ owner: upstreamOwner, repo: upstreamRepo });
+            const defaultBranch = upstream.data.default_branch || 'main';
+            const ref = await github.rest.git.getRef({ owner: upstreamOwner, repo: upstreamRepo, ref: `heads/${defaultBranch}` });
+            const sha = ref.data.object.sha;
 
-          cat > .github/workflows/clone-repos.yml <<'EOF'
-name: Clone or Add Repositories
+            // create branch on fork (if not exists)
+            try {
+              await github.rest.git.createRef({ owner: forkOwner, repo: forkRepo, ref: `refs/heads/${newBranch}`, sha });
+              core.info('Created branch on fork: ' + newBranch);
+            } catch (err) {
+              core.info('Branch creation skipped (may already exist): ' + err.message);
+            }
+
+            // files to add/update on fork branch
+            const files = [
+              {
+                path: '.github/workflows/clone-repos.yml',
+                message: 'chore: add clone-repos workflow',
+                content: `name: Clone or Add Repositories
 
 on:
   workflow_dispatch:
@@ -65,8 +82,7 @@ jobs:
   clone:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
       - name: Run clone script
         run: |
           chmod +x scripts/clone_repos.sh
@@ -80,11 +96,12 @@ jobs:
           else
             git commit -m "chore: add cloned repos"
             git push origin HEAD:main
-          fi
-EOF
-
-          cat > .github/workflows/basic-ci.yml <<'EOF'
-name: Basic CI
+          fi`
+              },
+              {
+                path: '.github/workflows/basic-ci.yml',
+                message: 'chore: add basic CI',
+                content: `name: Basic CI
 
 on:
   push:
@@ -99,11 +116,12 @@ jobs:
       - uses: actions/checkout@v4
       - name: Check repository files
         run: |
-          echo "Repository has $(ls -1 | wc -l) top-level items"
-EOF
-
-          cat > README.md <<'EOF'
-# efix
+          echo "Repository has $(ls -1 | wc -l) top-level items"`
+              },
+              {
+                path: 'README.md',
+                message: 'chore: update README',
+                content: `# efix
 
 Bu depo, efixteknoloji için toplanmış ve düzenlenmiş açık kaynak AI / ML / veri projelerinin listesini ve entegrasyon notlarını içerir.
 
@@ -130,15 +148,36 @@ CI ve Diğer
 - CONTRIBUTING.md içindeki talimatlara göre katkıda bulunabilirsiniz.
 - Daha gelişmiş CI eklememi isterseniz (lint/test/workflows) söyleyin.
 
-License: MIT
-EOF
+License: MIT`
+              }
+            ];
 
-          git add .github/workflows README.md
-          git commit -m "chore: add workflows and update README"
-
-      - name: Push branch to fork
-        run: |
-          git push fork add-workflows --force
+            for (const f of files) {
+              try {
+                // if file exists on the fork branch, update it
+                const existing = await github.rest.repos.getContent({ owner: forkOwner, repo: forkRepo, path: f.path, ref: newBranch });
+                core.info(`Updating ${f.path} on ${newBranch}`);
+                await github.rest.repos.createOrUpdateFileContents({
+                  owner: forkOwner,
+                  repo: forkRepo,
+                  path: f.path,
+                  message: f.message,
+                  content: Buffer.from(f.content).toString('base64'),
+                  branch: newBranch,
+                  sha: existing.data.sha
+                });
+              } catch (err) {
+                core.info(`Creating ${f.path} on ${newBranch}`);
+                await github.rest.repos.createOrUpdateFileContents({
+                  owner: forkOwner,
+                  repo: forkRepo,
+                  path: f.path,
+                  message: f.message,
+                  content: Buffer.from(f.content).toString('base64'),
+                  branch: newBranch
+                });
+              }
+            }
 
       - name: Create PR from fork to upstream
         uses: actions/github-script@v6
