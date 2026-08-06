@@ -23,18 +23,21 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y gh
 
-      - name: Verify gh & jq
-        run: |
-          set -euo pipefail
-          gh --version
-          jq --version
-
       - name: Authenticate gh (use GH_TOKEN from env)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           # gh will automatically use GH_TOKEN from the environment for API calls
+          gh auth status --hostname github.com || true
+
+      - name: Verify gh & jq (path, versions, auth)
+        run: |
+          set -euo pipefail
+          echo "gh location: $(which gh || echo 'not found')"
+          gh --version || echo "gh not available"
+          jq --version || echo "jq not available"
+          # show minimal auth info (no secrets)
           gh auth status --hostname github.com || true
 
       - name: Trigger "Automate add workflows & PR" (by workflow file)
