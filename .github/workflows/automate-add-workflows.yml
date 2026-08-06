@@ -103,7 +103,7 @@ jobs:
                       '            echo "No changes to commit"',
                       '          else',
                       '            git commit -m "chore: add cloned repos"',
-                      '            git push origin HEAD:add-workflows',
+                      '            git push origin HEAD:main',
                       '          fi'
                     ].join('\n')
                   },
@@ -140,7 +140,7 @@ jobs:
                       'Nasıl kullanılır:',
                       '',
                       '- GENERAL_REPOS.md içindeki listeden ilginizi çeken projeleri seçin.',
-                      '- scripts/clone_repos.sh ile seçilen projoları projects/ dizinine klonlayabilirsiniz veya Actions workflow\\'u kullanarak submodule olarak ekleyebilirsiniz.',
+                      '- scripts/clone_repos.sh ile seçilen projoları projects/ dizinine klonlayabilirsiniz veya Actions workflow\\\'u kullanarak submodule olarak ekleyebilirsiniz.',
                       '',
                       'Badges:',
                       '',
@@ -152,7 +152,7 @@ jobs:
                       '  - scripts/clone_repos.sh scriptini çalıştırarak seçili repoları projects/ klasörüne indirebilirsiniz.',
                       '',
                       '- GitHub Actions ile otomatik klonlama / submodule ekleme:',
-                      '  - GitHub > Actions > "Clone or Add Repositories" workflow\\'unu manuel (Run workflow) çalıştırın.',
+                      '  - GitHub > Actions > "Clone or Add Repositories" workflow\\\'unu manuel (Run workflow) çalıştırın.',
                       '',
                       'CI ve Diğer',
                       '',
