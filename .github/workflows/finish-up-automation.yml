@@ -1,0 +1,61 @@
+name: Finish automation (trigger + merge)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  finish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      - name: Install prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y jq gh
+
+      - name: Authenticate gh
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "$GITHUB_TOKEN" | gh auth login --with-token
+
+      - name: Trigger "Automate add workflows & PR"
+        id: trigger
+        run: |
+          gh workflow run "Automate add workflows & PR" --repo "${{ github.repository }}" || true
+          sleep 3
+          RUN_ID=$(gh run list --repo "${{ github.repository }}" --workflow="Automate add workflows & PR" --limit 1 --json databaseId --jq '.[0].databaseId' || echo "")
+          echo "run_id=$RUN_ID" >> $GITHUB_OUTPUT
+
+      - name: Wait for triggered run to complete
+        if: steps.trigger.outputs.run_id != ''
+        run: |
+          RUN_ID=${{ steps.trigger.outputs.run_id }}
+          echo "Waiting for run $RUN_ID..."
+          while true; do
+            STATUS=$(gh run view "$RUN_ID" --repo "${{ github.repository }}" --json status,conclusion --jq '.status + " " + (.conclusion // "")')
+            echo "Status: $STATUS"
+            if [[ "$STATUS" =~ ^completed ]]; then break; fi
+            sleep 5
+          done
+          gh run view "$RUN_ID" --repo "${{ github.repository }}" --log || true
+
+      - name: Find add-workflows PR
+        id: findpr
+        run: |
+          PR_NUM=$(gh pr list --repo "${{ github.repository }}" --head "${{ github.repository_owner }}:add-workflows" --state open --json number --jq '.[0].number' || echo "")
+          echo "pr=$PR_NUM" >> $GITHUB_OUTPUT
+
+      - name: Merge PR if exists
+        if: steps.findpr.outputs.pr != ''
+        run: |
+          PR=${{ steps.findpr.outputs.pr }}
+          echo "Merging PR #$PR"
+          # change --merge to --squash or --rebase if you prefer another strategy
+          gh pr merge "$PR" --repo "${{ github.repository }}" --merge --delete-branch || (echo "merge failed" && gh pr view "$PR" --repo "${{ github.repository }}" --web)
+
+      - name: Done
+        run: echo "Finish-up automation complete."
