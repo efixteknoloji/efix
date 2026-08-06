@@ -16,6 +16,7 @@ jobs:
           set -euo pipefail
           sudo apt-get update
           sudo apt-get install -y jq curl ca-certificates apt-transport-https gnupg lsb-release
+          # Add GitHub CLI apt repo / key (official)
           curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
           sudo chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg
           echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null
@@ -27,11 +28,12 @@ jobs:
           gh --version
           jq --version
 
-      - name: Authenticate gh (use GH_TOKEN, not gh auth login)
+      - name: Authenticate gh (use GH_TOKEN from env)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # gh will use GH_TOKEN from env. Print status (no secrets printed).
+          set -euo pipefail
+          # gh will automatically use GH_TOKEN from the environment for API calls
           gh auth status --hostname github.com || true
 
       - name: Trigger "Automate add workflows & PR" (by workflow file)
@@ -51,7 +53,7 @@ jobs:
           set -euo pipefail
           RUN_ID=${{ steps.trigger.outputs.run_id }}
           echo "Waiting for run $RUN_ID..."
-          MAX_WAIT_SECONDS=600
+          MAX_WAIT_SECONDS=600    # 10 minutes
           SLEEPT=5
           ELAPSED=0
           while true; do
@@ -88,5 +90,11 @@ jobs:
           if gh pr merge "$PR" --repo "${{ github.repository }}" --merge --delete-branch; then
             echo "PR #$PR merged successfully."
           else
-            echo "Merge failed
-
+            echo "Merge failed for PR #$PR — showing PR diagnostics:"
+            gh pr view "$PR" --repo "${{ github.repository }}" --json number,title,state,mergeable,mergeableState,headRefName,baseRefName --jq '.'
+            echo "If branch protection or required reviews block merging, please resolve them (or choose a different merge strategy)."
+            exit 1
+          fi
+
+      - name: Done
+        run: echo "Finish-up automation complete."
