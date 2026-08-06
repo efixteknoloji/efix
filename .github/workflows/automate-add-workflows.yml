@@ -19,19 +19,15 @@ jobs:
 
       - name: Set up git
         run: |
+          set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-      - name: Debug env (non-sensitive)
-        run: |
-          echo "GITHUB_ACTOR=$GITHUB_ACTOR"
-          echo "GITHUB_REPOSITORY=$GITHUB_REPOSITORY"
 
       - name: Create branch and add workflows/files
         env:
           NEW_BRANCH: add-workflows
         run: |
-          set -e
+          set -euo pipefail
           git fetch origin --prune
 
           # Determine default branch from origin HEAD if available; fallback to main
@@ -41,7 +37,7 @@ jobs:
           fi
           echo "Default branch detected: $DEFAULT_BRANCH"
 
-          # Create new branch from default branch on origin if exists, else create locally
+          # Create new branch from origin default if available; else local create
           if git ls-remote --exit-code --heads origin "$DEFAULT_BRANCH" >/dev/null 2>&1; then
             git checkout -b "$NEW_BRANCH" "origin/$DEFAULT_BRANCH"
           elif git ls-remote --exit-code --heads origin main >/dev/null 2>&1; then
@@ -98,33 +94,13 @@ jobs:
           echo "Repository has $(ls -1 | wc -l) top-level items"
 YML
 
-          # safe UTF-8 Turkish README (edit as needed)
           cat > README.md <<'MD'
 # efix
 
 Bu depo, efixteknoloji için toplanmış ve düzenlenmiş açık kaynak AI / ML / veri projelerinin listesini ve entegrasyon notlarını içerir.
 
 Nasıl kullanılır:
-
-- GENERAL_REPOS.md içindeki listeden ilginizi çeken projeleri seçin.
-- scripts/clone_repos.sh ile seçilen projoları projects/ dizinine klonlayabilirsiniz veya Actions workflow'u kullanarak submodule olarak ekleyebilirsiniz.
-
-Badges:
-
-[![Repo size](https://img.shields.io/badge/repo-empty-lightgrey)](https://github.com/efixteknoloji/efix)
-
-Hızlı Başlangıç
-
-- Manuel klonlama (yerelde):
-  - scripts/clone_repos.sh scriptini çalıştırarak seçili repoları projects/ klasörüne indirebilirsiniz.
-
-- GitHub Actions ile otomatik klonlama / submodule ekleme:
-  - GitHub > Actions > "Clone or Add Repositories" workflow'unu manuel (Run workflow) çalıştırın.
-
-CI ve Diğer
-
-- CONTRIBUTING.md içindeki talimatlara göre katkıda bulunabilirsiniz.
-- Daha gelişmiş CI eklememi isterseniz (lint/test/workflows) söyleyin.
+- scripts/clone_repos.sh ile seçilen projoları projects/ dizinine klonlayabilirsiniz.
 
 License: MIT
 MD
@@ -137,19 +113,22 @@ MD
             git push origin HEAD:$NEW_BRANCH
           fi
 
-      - name: Install gh CLI
+      - name: Install gh CLI (for PR creation)
         run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y curl ca-certificates apt-transport-https gnupg lsb-release
+          curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
+          sudo chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg
+          echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null
           sudo apt-get update
           sudo apt-get install -y gh
 
-      - name: Authenticate gh
+      - name: Create PR (use GH_TOKEN)
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          echo "$GITHUB_TOKEN" | gh auth login --with-token
-
-      - name: Create PR
-        run: |
-          # create PR from add-workflows into default branch (DEFAULT branch detected earlier may be different; use main as base)
-          # If you want to target another default branch change --base argument.
-          gh pr create --title "chore: add workflows and update README" --body "Automated: add workflows and README update (created by workflow)." --base main --head add-workflows || echo "PR may already exist or failed"
+          set -euo pipefail
+          # target base: adjust if your default branch is not 'main'
+          BASE_BRANCH="main"
+          gh pr create --title "chore: add workflows and update README" --body "Automated: add workflows and README update (created by workflow)." --base "$BASE_BRANCH" --head add-workflows --repo "${{ github.repository }}" || echo "PR may already exist or failed"
