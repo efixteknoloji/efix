@@ -25,6 +25,7 @@ jobs:
 
       - name: Verify gh & jq
         run: |
+          set -euo pipefail
           gh --version
           jq --version
 
