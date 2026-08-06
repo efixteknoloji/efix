@@ -32,11 +32,16 @@ jobs:
           NEW_BRANCH: add-workflows
         run: |
           set -e
-          git fetch origin
+          git fetch origin --prune
 
-          # Determine default branch and create new branch from it if available,
-          # otherwise fallback to origin/main, otherwise create branch locally.
-          DEFAULT_BRANCH="${GITHUB_REF_NAME:-main}"
+          # Determine default branch from origin HEAD if available; fallback to main
+          DEFAULT_BRANCH=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@refs/remotes/origin/@@' || true)
+          if [ -z "$DEFAULT_BRANCH" ]; then
+            DEFAULT_BRANCH="main"
+          fi
+          echo "Default branch detected: $DEFAULT_BRANCH"
+
+          # Create new branch from default branch on origin if exists, else create locally
           if git ls-remote --exit-code --heads origin "$DEFAULT_BRANCH" >/dev/null 2>&1; then
             git checkout -b "$NEW_BRANCH" "origin/$DEFAULT_BRANCH"
           elif git ls-remote --exit-code --heads origin main >/dev/null 2>&1; then
@@ -145,5 +150,6 @@ MD
 
       - name: Create PR
         run: |
-          # create PR from add-workflows into default branch (main)
+          # create PR from add-workflows into default branch (DEFAULT branch detected earlier may be different; use main as base)
+          # If you want to target another default branch change --base argument.
           gh pr create --title "chore: add workflows and update README" --body "Automated: add workflows and README update (created by workflow)." --base main --head add-workflows || echo "PR may already exist or failed"
