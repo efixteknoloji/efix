@@ -11,17 +11,15 @@ jobs:
       pull-requests: write
 
     steps:
-      - name: Ensure PAT secret is present
+      - name: Debug env (non-sensitive)
         run: |
-          if [ -z "${{ secrets.PAT }}" ]; then
-            echo "ERROR: secrets.PAT is empty. Add your Personal Access Token as a repository secret named PAT." >&2
-            exit 1
-          fi
+          echo "GITHUB_ACTOR=$GITHUB_ACTOR"
+          echo "GITHUB_REPOSITORY=$GITHUB_REPOSITORY"
 
       - name: Fork / branch / create files and PR (robust)
         uses: actions/github-script@v6
         with:
-          github-token: ${{ secrets.PAT }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
             (async () => {
               try {
@@ -65,159 +63,5 @@ jobs:
                 // Get upstream default branch SHA
                 const upstream = await github.rest.repos.get({ owner: upstreamOwner, repo: upstreamRepo });
                 const defaultBranch = upstream.data.default_branch || 'main';
-                const ref = await github.rest.git.getRef({ owner: upstreamOwner, repo: upstreamRepo, ref: `heads/${defaultBranch}` });
-                const sha = ref.data.object.sha;
-
-                const newBranch = 'add-workflows';
-
-                // Create branch on target owner (if doesn't exist)
-                try {
-                  await github.rest.git.createRef({ owner: targetOwner, repo: upstreamRepo, ref: `refs/heads/${newBranch}`, sha });
-                  console.log(`Created branch ${newBranch} on ${targetOwner}/${upstreamRepo}`);
-                } catch (err) {
-                  console.log(`Branch creation skipped on ${targetOwner}/${upstreamRepo}: ${err.message}`);
-                }
-
-                // Files to add/update (built robustly)
-                const files = [
-                  {
-                    path: '.github/workflows/clone-repos.yml',
-                    message: 'chore: add clone-repos workflow',
-                    content: [
-                      'name: Clone or Add Repositories',
-                      '',
-                      'on:',
-                      '  workflow_dispatch:',
-                      '',
-                      'jobs:',
-                      '  clone:',
-                      '    runs-on: ubuntu-latest',
-                      '    steps:',
-                      '      - uses: actions/checkout@v4',
-                      '      - name: Run clone script',
-                      '        run: |',
-                      '          chmod +x scripts/clone_repos.sh',
-                      '          ./scripts/clone_repos.sh',
-                      '      - name: Commit and push changes',
-                      '        run: |',
-                      '          git add projects || true',
-                      '          git add .gitmodules || true',
-                      '          if git diff --staged --quiet; then',
-                      '            echo "No changes to commit"',
-                      '          else',
-                      '            git commit -m "chore: add cloned repos"',
-                      '            git push origin HEAD:main',
-                      '          fi'
-                    ].join('\n')
-                  },
-                  {
-                    path: '.github/workflows/basic-ci.yml',
-                    message: 'chore: add basic CI',
-                    content: [
-                      'name: Basic CI',
-                      '',
-                      'on:',
-                      '  push:',
-                      '    branches: [ main ]',
-                      '  pull_request:',
-                      '    branches: [ main ]',
-                      '',
-                      'jobs:',
-                      '  test:',
-                      '    runs-on: ubuntu-latest',
-                      '    steps:',
-                      '      - uses: actions/checkout@v4',
-                      '      - name: Check repository files',
-                      '        run: |',
-                      '          echo "Repository has $(ls -1 | wc -l) top-level items"'
-                    ].join('\n')
-                  },
-                  {
-                    path: 'README.md',
-                    message: 'chore: update README',
-                    content: [
-                      '# efix',
-                      '',
-                      'Bu depo, efixteknoloji için toplanmış ve düzenlenmiş açık kaynak AI / ML / veri projelerinin listesini ve entegrasyon notlarını içerir.',
-                      '',
-                      'Nasıl kullanılır:',
-                      '',
-                      '- GENERAL_REPOS.md içindeki listeden ilginizi çeken projeleri seçin.',
-                      '- scripts/clone_repos.sh ile seçilen projoları projects/ dizinine klonlayabilirsiniz veya Actions workflow\'u kullanarak submodule olarak ekleyebilirsiniz.',
-                      '',
-                      'Badges:',
-                      '',
-                      '[![Repo size](https://img.shields.io/badge/repo-empty-lightgrey)](https://github.com/efixteknoloji/efix)',
-                      '',
-                      'Hızlı Başlangıç',
-                      '',
-                      '- Manuel klonlama (yerelde):',
-                      '  - scripts/clone_repos.sh scriptini çalıştırarak seçili repoları projects/ klasörüne indirebilirsiniz.',
-                      '',
-                      '- GitHub Actions ile otomatik klonlama / submodule ekleme:',
-                      '  - GitHub > Actions > "Clone or Add Repositories" workflow\'unu manuel (Run workflow) çalıştırın.',
-                      '',
-                      'CI ve Diğer',
-                      '',
-                      '- CONTRIBUTING.md içindeki talimatlara göre katkıda bulunabilirsiniz.',
-                      '- Daha gelişmiş CI eklememi isterseniz (lint/test/workflows) söyleyin.',
-                      '',
-                      'License: MIT'
-                    ].join('\n')
-                  }
-                ];
-
-                // Create or update files on targetOwner:newBranch
-                for (const f of files) {
-                  try {
-                    const existing = await github.rest.repos.getContent({ owner: targetOwner, repo: upstreamRepo, path: f.path, ref: newBranch });
-                    console.log(`Updating ${f.path} on ${targetOwner}/${upstreamRepo}:${newBranch}`);
-                    await github.rest.repos.createOrUpdateFileContents({
-                      owner: targetOwner,
-                      repo: upstreamRepo,
-                      path: f.path,
-                      message: f.message,
-                      content: Buffer.from(f.content).toString('base64'),
-                      branch: newBranch,
-                      sha: existing.data.sha
-                    });
-                  } catch (err) {
-                    if (err.status === 404) {
-                      console.log(`Creating ${f.path} on ${targetOwner}/${upstreamRepo}:${newBranch}`);
-                      await github.rest.repos.createOrUpdateFileContents({
-                        owner: targetOwner,
-                        repo: upstreamRepo,
-                        path: f.path,
-                        message: f.message,
-                        content: Buffer.from(f.content).toString('base64'),
-                        branch: newBranch
-                      });
-                    } else {
-                      throw err;
-                    }
-                  }
-                }
-
-                // If we operated on a fork (actor != upstreamOwner) create PR
-                if (!isUpstreamActor) {
-                  try {
-                    const pr = await github.rest.pulls.create({
-                      owner: upstreamOwner,
-                      repo: upstreamRepo,
-                      title: 'chore: add workflows and update README',
-                      head: `${targetOwner}:${newBranch}`,
-                      base: defaultBranch,
-                      body: 'Automated: add workflows and README update (created by workflow).'
-                    });
-                    console.log('PR created: ' + pr.data.html_url);
-                  } catch (err) {
-                    core.setFailed('Failed to create PR: ' + err.message);
-                  }
-                } else {
-                  console.log('Changes pushed to upstream owner branch; no PR created.');
-                }
-
-              } catch (error) {
-                core.setFailed(error.message || String(error));
-              }
-            })();
+                const ref = await github.rest.git.getRef({ owner: upstreamOwner, repo
+
