@@ -16,7 +16,6 @@ jobs:
           set -euo pipefail
           sudo apt-get update
           sudo apt-get install -y jq curl ca-certificates apt-transport-https gnupg lsb-release
-          # Add GitHub CLI apt repo / key (official)
           curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
           sudo chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg
           echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null
@@ -28,21 +27,17 @@ jobs:
           gh --version
           jq --version
 
-      - name: Authenticate gh
+      - name: Authenticate gh (use GH_TOKEN, not gh auth login)
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          set -euo pipefail
-          # login with token from secrets (stdin)
-          echo "$GITHUB_TOKEN" | gh auth login --with-token
-          # quick status check
+          # gh will use GH_TOKEN from env. Print status (no secrets printed).
           gh auth status --hostname github.com || true
 
       - name: Trigger "Automate add workflows & PR" (by workflow file)
         id: trigger
         run: |
           set -euo pipefail
-          # Use workflow file name to avoid issues with display name mismatches
           WORKFLOW_FILE="automate-add-workflows.yml"
           gh workflow run "$WORKFLOW_FILE" --repo "${{ github.repository }}" || true
           sleep 3
@@ -56,7 +51,7 @@ jobs:
           set -euo pipefail
           RUN_ID=${{ steps.trigger.outputs.run_id }}
           echo "Waiting for run $RUN_ID..."
-          MAX_WAIT_SECONDS=600    # 10 minutes
+          MAX_WAIT_SECONDS=600
           SLEEPT=5
           ELAPSED=0
           while true; do
@@ -80,7 +75,6 @@ jobs:
         id: findpr
         run: |
           set -euo pipefail
-          # Look for PR from repository_owner:add-workflows
           PR_NUM=$(gh pr list --repo "${{ github.repository }}" --head "${{ github.repository_owner }}:add-workflows" --state open --json number --jq '.[0].number' || echo "")
           echo "pr=$PR_NUM" >> $GITHUB_OUTPUT
           echo "Found PR: $PR_NUM"
@@ -91,15 +85,8 @@ jobs:
           set -euo pipefail
           PR=${{ steps.findpr.outputs.pr }}
           echo "Attempting to merge PR #$PR"
-          # Try merging; if fails, output PR details and show why
           if gh pr merge "$PR" --repo "${{ github.repository }}" --merge --delete-branch; then
             echo "PR #$PR merged successfully."
           else
-            echo "Merge failed for PR #$PR — showing PR details:"
-            gh pr view "$PR" --repo "${{ github.repository }}" --json number,title,state,mergeable,mergeableState,headRefName,baseRefName --jq '.'
-            gh pr view "$PR" --repo "${{ github.repository }}" --web || true
-            exit 1
-          fi
-
-      - name: Done
-        run: echo "Finish-up automation complete."
+            echo "Merge failed
+
