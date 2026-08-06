@@ -33,9 +33,9 @@ jobs:
         run: |
           set -e
           git fetch origin
-          # create branch from default branch
-          DEFAULT_BRANCH=${GITHUB_REF_NAME:-main}
-          git checkout -b "$NEW_BRANCH" origin/"$DEFAULT_BRANCH" || git checkout -b "$NEW_BRANCH"
+
+          # create branch from origin/main (fallback to local if origin/main missing)
+          git checkout -b "$NEW_BRANCH" origin/main || git checkout -b "$NEW_BRANCH"
 
           mkdir -p .github/workflows
 
@@ -137,5 +137,5 @@ MD
 
       - name: Create PR
         run: |
-          # create PR from add-workflows into default branch (main)
+          # create PR from add-workflows into main
           gh pr create --title "chore: add workflows and update README" --body "Automated: add workflows and README update (created by workflow)." --base main --head add-workflows || echo "PR may already exist or failed"
