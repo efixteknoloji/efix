@@ -28,13 +28,17 @@ jobs:
           echo "GITHUB_REPOSITORY=$GITHUB_REPOSITORY"
 
       - name: Create branch and add workflows/files
+        env:
+          NEW_BRANCH: add-workflows
         run: |
           set -e
-          NEW_BRANCH=add-workflows
-          git checkout -b "$NEW_BRANCH"
+          git fetch origin
+          # create branch from default branch
+          DEFAULT_BRANCH=${GITHUB_REF_NAME:-main}
+          git checkout -b "$NEW_BRANCH" origin/"$DEFAULT_BRANCH" || git checkout -b "$NEW_BRANCH"
 
-          # create clone-repos workflow
           mkdir -p .github/workflows
+
           cat > .github/workflows/clone-repos.yml <<'YML'
 name: Clone or Add Repositories
 
@@ -62,7 +66,6 @@ jobs:
           fi
 YML
 
-          # create basic-ci workflow
           cat > .github/workflows/basic-ci.yml <<'YML'
 name: Basic CI
 
@@ -82,7 +85,7 @@ jobs:
           echo "Repository has $(ls -1 | wc -l) top-level items"
 YML
 
-          # update README (UTF-8 safe Turkish content)
+          # safe UTF-8 Turkish README (edit as needed)
           cat > README.md <<'MD'
 # efix
 
@@ -134,4 +137,5 @@ MD
 
       - name: Create PR
         run: |
+          # create PR from add-workflows into default branch (main)
           gh pr create --title "chore: add workflows and update README" --body "Automated: add workflows and README update (created by workflow)." --base main --head add-workflows || echo "PR may already exist or failed"
