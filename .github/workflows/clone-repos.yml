@@ -1,0 +1,24 @@
+name: Clone or Add Repositories
+
+on:
+  workflow_dispatch:
+
+jobs:
+  clone:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run clone script
+        run: |
+          chmod +x scripts/clone_repos.sh
+          ./scripts/clone_repos.sh
+      - name: Commit and push changes
+        run: |
+          git add projects || true
+          git add .gitmodules || true
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "chore: add cloned repos"
+            git push origin HEAD:main
+          fi
